@@ -2,6 +2,19 @@
 
 WideCapture is a 360-degree video capture tool for DirectX 11 games, now powered by the ReShade Add-on API.
 
+> [!WARNING]
+> **DEVELOPMENT STATUS: PROOF OF CONCEPT / ALPHA**  
+>
+> This project is currently in a **Proof of Concept** stage. It is under active development, and many intended features are successfully planned but not yet implemented.  
+>
+> Please be aware that:
+> - The codebase is experimental and may contain bugs.
+> - Performance has not yet been optimized.
+> - Stability is not guaranteed.
+>
+> We share this early version for developers and enthusiasts interested in the technology, but it does not yet represent the final quality or feature set of the finished product. Please manage your expectations accordingly.
+
+
 ## Features
 
 - **Single-Frame Capture**: Captures all 6 faces of a cubemap within a single game frame, eliminating motion artifacts caused by camera rotation.
