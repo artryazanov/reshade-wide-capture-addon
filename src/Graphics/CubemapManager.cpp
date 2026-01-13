@@ -44,13 +44,16 @@ namespace Graphics {
     }
 
     bool CubemapManager::InitResources(uint32_t width, uint32_t height) {
+        if (width == 0 || height == 0) return false;
         if (m_width == width && m_height == height && m_faceTextures[0].handle != 0) return true;
         
         DestroyResources();
 
         m_width = width;
         m_height = height;
-        m_faceSize = std::min(width, height); // Keep it square
+        // Keep it square and aligned to 16 to avoid driver quirks with odd RenderTarget sizes
+        m_faceSize = std::min(width, height);
+        m_faceSize = (m_faceSize + 15) & ~15;
 
         // 1. Create Face Textures (R8G8B8A8 UNORM)
         for (int i = 0; i < 6; ++i) {
@@ -281,10 +284,13 @@ namespace Graphics {
     }
 
     void CubemapManager::OnPresent(reshade::api::command_queue* queue, reshade::api::swapchain* swapchain) {
-        if (!InitResources(m_width, m_height)) {
+        // Optimization: Don't initialize or capture if we haven't found a camera yet (e.g. loading screen)
+        if (m_cameraController->GetCameraBuffer().handle == 0) return;
+
+        if (m_width == 0 || m_height == 0 || !InitResources(m_width, m_height)) {
              reshade::api::resource backBuffer = swapchain->get_current_back_buffer();
              reshade::api::resource_desc desc = m_device->get_resource_desc(backBuffer);
-             InitResources((uint32_t)desc.texture.width, (uint32_t)desc.texture.height);
+             if (!InitResources((uint32_t)desc.texture.width, (uint32_t)desc.texture.height)) return;
         }
 
         // Copy Faces to Cube Texture (Array)
@@ -354,6 +360,38 @@ namespace Graphics {
              // Cleanup
              ID3D11RenderTargetView* nullRTV = nullptr;
              ctx->OMSetRenderTargets(1, &nullRTV, nullptr);
+        }
+    }
+    
+    void CubemapManager::OnMapBuffer(reshade::api::device* device, reshade::api::resource resource, uint64_t size, void* data) {
+         if (!data) return;
+         
+         if (size == UINT64_MAX) {
+             reshade::api::resource_desc desc = device->get_resource_desc(resource);
+             size = desc.buffer.size;
+         }
+
+         std::lock_guard<std::mutex> lock(m_mapMutex);
+         m_mappedBuffers[resource.handle] = { data, size };
+    }
+
+    void CubemapManager::OnUnmapBuffer(reshade::api::device* device, reshade::api::resource resource) {
+        // Read data on unmap
+        void* dataPtr = nullptr;
+        uint64_t size = 0;
+
+        {
+             std::lock_guard<std::mutex> lock(m_mapMutex);
+             auto it = m_mappedBuffers.find(resource.handle);
+             if (it != m_mappedBuffers.end()) {
+                 dataPtr = it->second.data;
+                 size = it->second.size;
+                 m_mappedBuffers.erase(it);
+             }
+        }
+
+        if (dataPtr && size > 0 && m_cameraController) {
+             m_cameraController->OnScanBuffer(resource, dataPtr, size);
         }
     }
 }

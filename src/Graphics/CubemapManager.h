@@ -5,6 +5,8 @@
 #include <memory>
 #include "../Camera/CameraController.h"
 #include "../Video/FFmpegBackend.h"
+#include <map>
+#include <mutex>
 
 namespace Graphics {
 
@@ -18,12 +20,22 @@ namespace Graphics {
         void OnDrawIndexed(reshade::api::command_list* cmd_list, uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance);
         void OnUpdateBuffer(reshade::api::device* device, reshade::api::resource resource, const void* data, uint64_t size);
         void OnBindPipeline(reshade::api::command_list* cmd_list, reshade::api::pipeline_stage stages, reshade::api::pipeline pipeline);
+        
+        void OnMapBuffer(reshade::api::device* device, reshade::api::resource resource, uint64_t size, void* data);
+        void OnUnmapBuffer(reshade::api::device* device, reshade::api::resource resource);
 
     private:
         bool InitResources(uint32_t width, uint32_t height);
         void DestroyResources();
         
         void ProcessDraw(reshade::api::command_list* cmd_list, bool indexed, uint32_t count, uint32_t instance_count, uint32_t first, int32_t offset_or_vertex, uint32_t first_instance);
+
+        struct MappedInfo {
+            void* data;
+            uint64_t size;
+        };
+        std::map<uint64_t, MappedInfo> m_mappedBuffers;
+        std::mutex m_mapMutex;
 
         reshade::api::device* m_device = nullptr;
         std::unique_ptr<Camera::CameraController> m_cameraController;

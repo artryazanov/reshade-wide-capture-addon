@@ -23,60 +23,119 @@ static void on_destroy_device(reshade::api::device* device)
 static void on_init_swapchain(reshade::api::swapchain* swapchain, bool resize)
 {
     LOG_INFO("Init Swapchain. Resize: ", resize);
-    if (!g_CubemapManager) {
-        g_CubemapManager = std::make_unique<Graphics::CubemapManager>(swapchain->get_device());
+    try {
+        if (!g_CubemapManager) {
+            g_CubemapManager = std::make_unique<Graphics::CubemapManager>(swapchain->get_device());
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception in on_init_swapchain: ", e.what());
+    } catch (...) {
+        LOG_ERROR("Unknown Exception in on_init_swapchain");
     }
 }
 
 static void on_destroy_swapchain(reshade::api::swapchain* /*swapchain*/, bool /*resize*/)
 {
     LOG_INFO("Destroy Swapchain");
-    // We can keep the manager alive during resize, or reset it.
-    // If we reset, we lose recording state.
+    try {
+        // We can keep the manager alive during resize, or reset it.
+        // If we reset, we lose recording state.
+        // FIX: We MUST reset it, otherwise we might hold onto invalid resources or obsolete references
+        // which causes crashes on startup when swapchain is resized immediately (0 -> Destroy -> 1).
+        g_CubemapManager.reset();
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception in on_destroy_swapchain: ", e.what());
+    } catch (...) {
+        LOG_ERROR("Unknown Exception in on_destroy_swapchain");
+    }
 }
 
 static void on_present(reshade::api::command_queue* queue, reshade::api::swapchain* swapchain, const reshade::api::rect* /*source*/, const reshade::api::rect* /*dest*/, uint32_t /*dirty*/, const reshade::api::rect* /*dirty_rects*/)
 {
-    if (g_CubemapManager) {
-        g_CubemapManager->OnPresent(queue, swapchain);
+    try {
+        if (g_CubemapManager) {
+            g_CubemapManager->OnPresent(queue, swapchain);
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception in on_present: ", e.what());
+    } catch (...) {
+        LOG_ERROR("Unknown Exception in on_present");
     }
 }
 
 static bool on_draw(reshade::api::command_list* cmd_list, uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
 {
-    if (g_CubemapManager) {
-        g_CubemapManager->OnDraw(cmd_list, vertex_count, instance_count, first_vertex, first_instance);
+    try {
+        if (g_CubemapManager) {
+            g_CubemapManager->OnDraw(cmd_list, vertex_count, instance_count, first_vertex, first_instance);
+        }
+    } catch (...) {
+        // Suppress draw exceptions to avoid spamming logs per draw call, or log once?
+        // Ideally should simply return false.
     }
     return false;
 }
 
 static bool on_draw_indexed(reshade::api::command_list* cmd_list, uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance)
 {
-    if (g_CubemapManager) {
-        g_CubemapManager->OnDrawIndexed(cmd_list, index_count, instance_count, first_index, vertex_offset, first_instance);
+    try {
+        if (g_CubemapManager) {
+            g_CubemapManager->OnDrawIndexed(cmd_list, index_count, instance_count, first_index, vertex_offset, first_instance);
+        }
+    } catch (...) {
+        // Suppress
     }
     return false;
 }
 
 static bool on_update_buffer_region(reshade::api::device* device, const void* data, reshade::api::resource resource, uint64_t /*offset*/, uint64_t size)
 {
-    if (g_CubemapManager) {
-        g_CubemapManager->OnUpdateBuffer(device, resource, data, size);
+    try {
+        if (g_CubemapManager) {
+            // static int updateLog = 0;
+            // if (updateLog++ < 20) LOG_INFO("Event: Update Buffer ", (void*)resource.handle, " Size: ", size);
+            g_CubemapManager->OnUpdateBuffer(device, resource, data, size);
+        }
+    } catch (...) {
+        // Suppress
     }
     return false;
 }
 
 static void on_map_buffer_region(reshade::api::device* device, reshade::api::resource resource, uint64_t /*offset*/, uint64_t size, reshade::api::map_access /*access*/, void** data)
 {
-    if (g_CubemapManager && data && *data) {
-        g_CubemapManager->OnUpdateBuffer(device, resource, *data, size);
+    try {
+        if (g_CubemapManager && data && *data) {
+            // static int mapLog = 0;
+            // if (mapLog++ < 20) LOG_INFO("Event: Map Buffer ", (void*)resource.handle, " Size: ", size);
+            g_CubemapManager->OnMapBuffer(device, resource, size, *data);
+        }
+    } catch (...) {
+        // Suppress
+    }
+}
+
+static void on_unmap_buffer_region(reshade::api::device* device, reshade::api::resource resource)
+{
+    try {
+        if (g_CubemapManager) {
+            // static int unmapLog = 0;
+            // if (unmapLog++ < 20) LOG_INFO("Event: Unmap Buffer ", (void*)resource.handle);
+            g_CubemapManager->OnUnmapBuffer(device, resource);
+        }
+    } catch (...) {
+        // Suppress
     }
 }
 
 static void on_bind_pipeline(reshade::api::command_list* cmd_list, reshade::api::pipeline_stage stages, reshade::api::pipeline pipeline)
 {
-    if (g_CubemapManager) {
-        g_CubemapManager->OnBindPipeline(cmd_list, stages, pipeline);
+    try {
+        if (g_CubemapManager) {
+            g_CubemapManager->OnBindPipeline(cmd_list, stages, pipeline);
+        }
+    } catch (...) {
+        // Suppress
     }
 }
 
@@ -103,6 +162,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
         reshade::register_event<reshade::addon_event::draw_indexed>(on_draw_indexed);
         reshade::register_event<reshade::addon_event::update_buffer_region>(on_update_buffer_region);
         reshade::register_event<reshade::addon_event::map_buffer_region>(on_map_buffer_region);
+        reshade::register_event<reshade::addon_event::unmap_buffer_region>(on_unmap_buffer_region);
         reshade::register_event<reshade::addon_event::bind_pipeline>(on_bind_pipeline);
 
         break;

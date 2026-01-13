@@ -7,7 +7,21 @@ namespace Camera {
     CameraController::CameraController() {}
 
     void CameraController::OnUpdateBuffer(reshade::api::resource resource, const void* data, uint64_t size) {
+        ScanBufferImpl(resource, data, size, false);
+    }
+
+    void CameraController::OnScanBuffer(reshade::api::resource resource, const void* data, uint64_t size) {
+        ScanBufferImpl(resource, data, size, true);
+    }
+
+    void CameraController::ScanBufferImpl(reshade::api::resource resource, const void* data, uint64_t size, bool isMapped) {
         if (size < 64) return; // Too small for a matrix
+
+        // Performance Guard: If mapped (uncached memory), ONLY read small buffers
+        if (isMapped && size > 4096) return;
+
+        static int logCounter = 0;
+        bool logThisFrame = (logCounter++ % 500 == 0); // Log occasionally to avoid spam
 
         std::lock_guard<std::mutex> lock(m_mutex);
         
@@ -21,33 +35,76 @@ namespace Camera {
         const float* floatData = (const float*)data;
         size_t floatCount = size / sizeof(float);
 
-        // Heuristic detection if not already detected
-        // Note: In ReShade we might want to re-verify occasionally, but for now stick to "once detected, stick to it"
-        // unless we want to support camera switching. Let's re-scan if it *was* a camera to update matrices.
+        // Check if this is the "Noisy" buffer (Size ~10KB)
+        bool isNoisy = (size > 9000 && size < 11000);
         
+        static int noiseLogCount = 0;
+        
+        // Log this frame if:
+        // 1. It's NOT the noisy buffer
+        // 2. OR it IS the noisy buffer, but we haven't logged it much yet
+        // 3. AND global log counter is not exhausted (reset counter for this logic)
+        
+        bool shouldLog = false;
+        if (logThisFrame) {
+            if (!isNoisy) {
+                shouldLog = true;
+            } else if (noiseLogCount < 5) {
+                shouldLog = true;
+                noiseLogCount++;
+            }
+        }
+
         bool foundView = false;
         bool foundProj = false;
+
+        if (shouldLog && !foundView && !foundProj && m_cameraBuffer.handle == 0) {
+            // Log first few floats of a candidate buffer if we haven't found a camera yet
+            LOG_INFO("Scanning Buffer ", (void*)handle, " Size: ", size, " (Mapped: ", isMapped, "). F[0-3]: ", floatData[0], ", ", floatData[1], ", ", floatData[2], ", ", floatData[3]);
+        }
+
+        // FULL BUFFER DUMP (Only for medium/small buffers now, OR specifically requested)
+        if (m_cameraBuffer.handle == 0 && !m_deepScanDone && size > 200 && size < 2000) { // Look for standard CB sizes!
+             m_deepScanDone = true; 
+             LOG_INFO("--- FULL BUFFER DUMP START [Buffer ", (void*)handle, " Size ", size, "] ---");
+                 
+             // Dump all floats in lines of 8
+             for (size_t i = 0; i < floatCount; i += 8) {
+                 if (i + 7 < floatCount) {
+                     LOG_INFO("OFFSET ", i*4, ": ", 
+                         floatData[i], ", ", floatData[i+1], ", ", floatData[i+2], ", ", floatData[i+3], ",    ",
+                         floatData[i+4], ", ", floatData[i+5], ", ", floatData[i+6], ", ", floatData[i+7]);
+                 }
+             }
+             LOG_INFO("--- FULL BUFFER DUMP END ---");
+        }
 
         // Scan for View Matrix
         for (size_t i = 0; i <= floatCount - 16; i += 4) {
             bool transposed = false;
+            // Original logic for view matrix
             if (IsViewMatrix(floatData + i, &transposed)) {
-                state.viewMatrixOffset = (int)i;
-                state.isCamera = true;
+                 if (!foundView) {
+                     // LOG_INFO("Found Potential View Matrix at Offset ", i*4);
+                 }
+                 state.viewMatrixOffset = (int)i;
+                 state.isCamera = true;
+                 
+                 LOG_INFO("FOUND VIEW MATRIX! Buffer: ", (void*)handle, " Offset: ", i);
 
-                m_isTransposed = transposed;
-                DirectX::XMMATRIX viewMat = DirectX::XMLoadFloat4x4((const DirectX::XMFLOAT4X4*)(floatData + i));
-                if (transposed) viewMat = DirectX::XMMatrixTranspose(viewMat);
+                 m_isTransposed = transposed;
+                 DirectX::XMMATRIX viewMat = DirectX::XMLoadFloat4x4((const DirectX::XMFLOAT4X4*)(floatData + i));
+                 if (transposed) viewMat = DirectX::XMMatrixTranspose(viewMat);
 
-                m_lastGameView = viewMat;
+                 m_lastGameView = viewMat;
 
-                if (!m_upDetected) {
-                    DetectWorldUp(viewMat);
-                }
+                 if (!m_upDetected) {
+                     DetectWorldUp(viewMat);
+                 }
 
-                m_cameraBuffer = resource; // Set as active camera buffer
-                foundView = true;
-                break; // Assume one view matrix per buffer for simplicity
+                 m_cameraBuffer = resource; 
+                 foundView = true;
+                 break; 
             }
         }
 
@@ -56,6 +113,8 @@ namespace Camera {
             if (IsProjectionMatrix(floatData + i)) {
                 state.projMatrixOffset = (int)i;
                 state.isCamera = true;
+
+                LOG_INFO("FOUND PROJ MATRIX! Buffer: ", (void*)handle, " Offset: ", i);
 
                 m_isRH = IsRightHandedProjection(floatData + i);
                 m_lastGameProj = DirectX::XMLoadFloat4x4((const DirectX::XMFLOAT4X4*)(floatData + i));

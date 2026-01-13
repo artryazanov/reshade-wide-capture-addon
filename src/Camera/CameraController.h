@@ -29,6 +29,7 @@ namespace Camera {
         CameraController();
         
         void OnUpdateBuffer(reshade::api::resource resource, const void* data, uint64_t size);
+        void OnScanBuffer(reshade::api::resource resource, const void* data, uint64_t size);
         
         // Returns the handle of the buffer detected as the camera constant buffer
         reshade::api::resource GetCameraBuffer() const { return m_cameraBuffer; }
@@ -41,6 +42,7 @@ namespace Camera {
         bool GetModifiedBufferData(CubeFace face, std::vector<uint8_t>& outputData);
 
     private:
+        void ScanBufferImpl(reshade::api::resource resource, const void* data, uint64_t size, bool isMapped);
         bool IsProjectionMatrix(const float* data);
         bool IsViewMatrix(const float* data, bool* outIsTransposed);
         bool IsRightHandedProjection(const float* data);
@@ -56,5 +58,8 @@ namespace Camera {
         bool m_upDetected = false;
         bool m_isRH = false; // Right-Handed
         bool m_isTransposed = false; // Matrix layout in buffer
+        
+        bool m_deepScanDone = false;
+        int m_deepScanAttempts = 0;
     };
 }
