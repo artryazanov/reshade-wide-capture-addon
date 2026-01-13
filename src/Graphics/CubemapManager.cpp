@@ -178,17 +178,17 @@ namespace Graphics {
         return true;
     }
 
-    void CubemapManager::OnUpdateBuffer(reshade::api::device* device, reshade::api::resource resource, const void* data, uint64_t size) {
+    void CubemapManager::OnUpdateBuffer(reshade::api::device* /*device*/, reshade::api::resource resource, const void* data, uint64_t size) {
         if (m_cameraController) {
             m_cameraController->OnUpdateBuffer(resource, data, size);
         }
     }
 
-    void CubemapManager::OnBindPipeline(reshade::api::command_list* cmd_list, reshade::api::pipeline_stage stages, reshade::api::pipeline pipeline) {
+    void CubemapManager::OnBindPipeline(reshade::api::command_list* /*cmd_list*/, reshade::api::pipeline_stage /*stages*/, reshade::api::pipeline /*pipeline*/) {
         // Track pipeline if necessary
     }
 
-    void CubemapManager::ProcessDraw(reshade::api::command_list* cmd_list, bool indexed, uint32_t count, uint32_t instance_count, uint32_t first, int32_t offset_or_vertex, uint32_t first_instance) {
+    void CubemapManager::ProcessDraw(reshade::api::command_list* cmd_list, bool indexed, uint32_t count, uint32_t /*instance_count*/, uint32_t first, int32_t offset_or_vertex, uint32_t /*first_instance*/) {
         if (!m_isRecording) return;
         
         reshade::api::resource cameraBuffer = m_cameraController->GetCameraBuffer();
@@ -288,8 +288,11 @@ namespace Graphics {
         }
 
         // Copy Faces to Cube Texture (Array)
-        for(int i=0; i<6; ++i) {
-             m_device->copy_texture_region(m_faceTextures[i], 0, nullptr, m_cubeTexture, i, nullptr);
+        reshade::api::command_list* cmd_list = queue->get_immediate_command_list();
+        if (cmd_list) {
+            for (int i = 0; i < 6; ++i) {
+                cmd_list->copy_texture_region(m_faceTextures[i], 0, nullptr, m_cubeTexture, i, nullptr);
+            }
         }
 
         // Execute Compute Shader to Stitch/Project

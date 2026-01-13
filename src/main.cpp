@@ -42,25 +42,28 @@ static void on_present(reshade::api::command_queue* queue, reshade::api::swapcha
     }
 }
 
-static void on_draw(reshade::api::command_list* cmd_list, uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
+static bool on_draw(reshade::api::command_list* cmd_list, uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
 {
     if (g_CubemapManager) {
         g_CubemapManager->OnDraw(cmd_list, vertex_count, instance_count, first_vertex, first_instance);
     }
+    return false;
 }
 
-static void on_draw_indexed(reshade::api::command_list* cmd_list, uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance)
+static bool on_draw_indexed(reshade::api::command_list* cmd_list, uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance)
 {
     if (g_CubemapManager) {
         g_CubemapManager->OnDrawIndexed(cmd_list, index_count, instance_count, first_index, vertex_offset, first_instance);
     }
+    return false;
 }
 
-static void on_update_buffer_region(reshade::api::device* device, const void* data, reshade::api::resource resource, uint64_t offset, uint64_t size)
+static bool on_update_buffer_region(reshade::api::device* device, const void* data, reshade::api::resource resource, uint64_t /*offset*/, uint64_t size)
 {
     if (g_CubemapManager) {
         g_CubemapManager->OnUpdateBuffer(device, resource, data, size);
     }
+    return false;
 }
 
 static void on_map_buffer_region(reshade::api::device* device, reshade::api::resource resource, uint64_t /*offset*/, uint64_t size, reshade::api::map_access /*access*/, void** data)

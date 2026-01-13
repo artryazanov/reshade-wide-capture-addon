@@ -23,7 +23,7 @@ namespace Graphics {
         bool InitResources(uint32_t width, uint32_t height);
         void DestroyResources();
         
-        void ProcessDraw(reshade::api::command_list* cmd_list, auto drawCallback);
+        void ProcessDraw(reshade::api::command_list* cmd_list, bool indexed, uint32_t count, uint32_t instance_count, uint32_t first, int32_t offset_or_vertex, uint32_t first_instance);
 
         reshade::api::device* m_device = nullptr;
         std::unique_ptr<Camera::CameraController> m_cameraController;
